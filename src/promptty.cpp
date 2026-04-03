@@ -237,10 +237,9 @@ KeyEvent read_key() {
   }
 
   if (chr == '\x1b') {
-    // Check if more bytes are available (escape sequence vs bare ESC)
+    // Distinguish bare ESC from escape sequences via 50ms timeout.
     struct pollfd pfd = {.fd = STDIN_FILENO, .events = POLLIN, .revents = 0};
     if (poll(&pfd, 1, 50) <= 0) {
-      // No data within 50ms — bare ESC
       return make_key(key::escape);
     }
 
@@ -249,13 +248,11 @@ KeyEvent read_key() {
       return make_key(key::escape);
     }
 
-    // Alt+Enter: ESC followed by newline
-    if (seq0 == '\n') {
+    if (seq0 == '\n') { // Alt+Enter
       return make_key(key::alt_enter);
     }
 
-    // CSI sequences: ESC [
-    if (seq0 == '[') {
+    if (seq0 == '[') { // CSI sequence
       char seq1{};
       if (::read(STDIN_FILENO, &seq1, 1) <= 0) {
         return make_key(key::unknown);
@@ -285,7 +282,6 @@ KeyEvent read_key() {
     return make_key(key::unknown);
   }
 
-  // UTF-8 multi-byte sequence
   auto b = static_cast<unsigned char>(chr);
   if (b >= 0x80) {
     std::size_t expected = utf8_codepoint_length(chr);
@@ -299,8 +295,7 @@ KeyEvent read_key() {
     return {.k = key::character, .ch = std::move(seq)};
   }
 
-  // ASCII printable
-  if (b >= 0x20 && b < 0x7F) {
+  if (b >= 0x20 && b < 0x7F) { // ASCII printable
     return {.k = key::character, .ch = std::string(1, chr)};
   }
 
@@ -432,7 +427,7 @@ std::optional<std::string> LineEditor::get_line() {
       return std::nullopt;
     }
     if (evt.k == key::enter) {
-      // Backslash-continuation: if buffer ends with '\', replace with newline
+      // Backslash continuation.
       if (!buffer_.empty() && buffer_.back() == '\\') {
         buffer_.pop_back();
         buffer_ += '\n';
@@ -461,7 +456,7 @@ void LineEditor::load_history() {
       return;
     std::string line;
     while (std::getline(file, line)) {
-      // Decode \x1f back to \n for multiline entries
+      // \x1f encodes newlines within multiline entries.
       std::string decoded;
       decoded.reserve(line.size());
       for (char c : line) {
@@ -478,7 +473,6 @@ void LineEditor::save_history() {
     if (!file)
       return;
     for (const auto& entry : history_) {
-      // Encode \n as \x1f to keep one entry per file line
       for (char c : entry) {
         file.put((c == '\n') ? '\x1f' : c);
       }
@@ -487,16 +481,14 @@ void LineEditor::save_history() {
   }
 }
 
-// --- Multiline refresh ---
+// --- Refresh ---
 
 void LineEditor::refresh() {
-  // Move cursor to start of our display region
   if (display_rows_ > 1) {
     std::print("\x1b[{}A", display_rows_ - 1);
   }
-  std::print("\r\x1b[J"); // carriage return + clear to end of screen
+  std::print("\r\x1b[J");
 
-  // Split buffer into lines
   std::size_t term_width = detail::get_terminal_width();
   std::size_t rows = 0;
   std::size_t cursor_row = 0;
@@ -509,30 +501,25 @@ void LineEditor::refresh() {
     std::size_t ll = line_length(ln);
     auto line_sv = std::string_view(buffer_).substr(ls, ll);
 
-    // Print prompt/continuation + line content
     if (ln > 0)
       std::print("\r\n");
     std::print("{}{}", p.text, line_sv);
 
-    // Calculate how many terminal rows this line occupies
     std::size_t line_display_width = p.visible_width + detail::display_width(line_sv);
     std::size_t line_rows =
         (line_display_width == 0) ? 1 : ((line_display_width - 1) / term_width + 1);
     rows += line_rows;
 
-    // Track cursor position if cursor is on this line
     if (cursor_ >= ls && cursor_ <= ls + ll) {
       std::size_t col_in_line =
           detail::display_width(std::string_view(buffer_).substr(ls, cursor_ - ls));
       std::size_t abs_col = p.visible_width + col_in_line;
-      // Which row within this line (due to wrapping)
       std::size_t wrap_row = abs_col / term_width;
       cursor_row = (rows - line_rows) + wrap_row;
       cursor_col = abs_col % term_width;
     }
   }
 
-  // Position cursor: move from bottom to cursor_row, then set column
   std::size_t rows_from_bottom = rows - 1 - cursor_row;
   if (rows_from_bottom > 0) {
     std::print("\x1b[{}A", rows_from_bottom);
@@ -546,7 +533,7 @@ void LineEditor::refresh() {
   std::fflush(stdout);
 }
 
-// --- Key handling ---
+// --- Completion ---
 
 void LineEditor::set_completion(CompletionCallback cb) {
   completion_cb_ = std::move(cb);
@@ -557,7 +544,6 @@ void LineEditor::handle_tab() {
     return;
 
   if (!completion_) {
-    // First tab press — request completions
     auto result = completion_cb_({.buffer = buffer_, .cursor = cursor_});
     if (result.candidates.empty()) {
       std::print("\x07"); // bell
@@ -565,13 +551,11 @@ void LineEditor::handle_tab() {
       return;
     }
     if (result.candidates.size() == 1) {
-      // Single candidate — auto-insert
       buffer_.erase(result.replace_start, result.replace_length);
       buffer_.insert(result.replace_start, result.candidates[0]);
       cursor_ = result.replace_start + result.candidates[0].size();
       return;
     }
-    // Multiple candidates — start cycling
     std::string original = buffer_.substr(result.replace_start, result.replace_length);
     completion_ = CompletionState{
         .replace_start = result.replace_start,
@@ -580,13 +564,11 @@ void LineEditor::handle_tab() {
         .index = 0,
         .original = std::move(original),
     };
-    // Insert first candidate
     buffer_.erase(completion_->replace_start, completion_->replace_length);
     buffer_.insert(completion_->replace_start, completion_->candidates[0]);
     cursor_ = completion_->replace_start + completion_->candidates[0].size();
     completion_->replace_length = completion_->candidates[0].size();
   } else {
-    // Subsequent tab — cycle to next candidate
     completion_->index = (completion_->index + 1) % completion_->candidates.size();
     auto& candidate = completion_->candidates[completion_->index];
     buffer_.erase(completion_->replace_start, completion_->replace_length);
@@ -596,8 +578,9 @@ void LineEditor::handle_tab() {
   }
 }
 
+// --- Key handling ---
+
 void LineEditor::handle(KeyEvent evt) {
-  // Clear completion state on any non-tab key
   if (evt.k != key::tab) {
     completion_.reset();
   }
@@ -613,7 +596,6 @@ void LineEditor::handle(KeyEvent evt) {
     break;
   case key::backspace:
     if (cursor_ > 0) {
-      // If at start of a line and prev char is \n, just delete the newline
       if (buffer_[cursor_ - 1] == '\n') {
         buffer_.erase(--cursor_, 1);
       } else {
@@ -654,12 +636,10 @@ void LineEditor::handle(KeyEvent evt) {
   case key::up: {
     std::size_t cur_ln = current_line();
     if (cur_ln > 0) {
-      // Move to same column on previous line
       std::size_t col = column_width();
       std::size_t prev_start = line_start(cur_ln - 1);
       std::size_t prev_len = line_length(cur_ln - 1);
       auto prev_line = std::string_view(buffer_).substr(prev_start, prev_len);
-      // Find byte offset that gives us the target column
       std::size_t w = 0;
       std::size_t pos = 0;
       while (pos < prev_line.size()) {
@@ -672,7 +652,6 @@ void LineEditor::handle(KeyEvent evt) {
       }
       cursor_ = prev_start + pos;
     } else {
-      // First line — navigate history
       if (hindex_ == 0)
         saved_buffer_ = buffer_;
       if (hindex_ < history_.size())
@@ -684,7 +663,6 @@ void LineEditor::handle(KeyEvent evt) {
   case key::down: {
     std::size_t cur_ln = current_line();
     if (cur_ln + 1 < line_count()) {
-      // Move to same column on next line
       std::size_t col = column_width();
       std::size_t next_start = line_start(cur_ln + 1);
       std::size_t next_len = line_length(cur_ln + 1);
@@ -701,7 +679,6 @@ void LineEditor::handle(KeyEvent evt) {
       }
       cursor_ = next_start + pos;
     } else {
-      // Last line — navigate history
       if (hindex_ > 0) {
         --hindex_;
         buffer_ = (hindex_ == 0) ? saved_buffer_ : history_[hindex_ - 1];
@@ -721,30 +698,25 @@ void LineEditor::handle(KeyEvent evt) {
     break;
   }
   case key::ctrl_k: {
-    // Kill to end of current line (not end of buffer)
     std::size_t cur_ln = current_line();
     std::size_t line_end = line_start(cur_ln) + line_length(cur_ln);
     if (cursor_ == line_end && cursor_ < buffer_.size()) {
-      // At end of line, delete the newline to join lines
-      buffer_.erase(cursor_, 1);
+      buffer_.erase(cursor_, 1); // join lines
     } else {
       buffer_.erase(cursor_, line_end - cursor_);
     }
     break;
   }
   case key::ctrl_u: {
-    // Kill to start of current line
     std::size_t ls = line_start(current_line());
     buffer_.erase(ls, cursor_ - ls);
     cursor_ = ls;
     break;
   }
   case key::ctrl_w:
-    // Skip spaces backward (byte-safe, space is always 0x20)
     while (cursor_ > 0 && buffer_[cursor_ - 1] == ' ') {
       buffer_.erase(--cursor_, 1);
     }
-    // Skip non-space graphemes backward (stop at newline)
     while (cursor_ > 0 && buffer_[cursor_ - 1] != ' ' && buffer_[cursor_ - 1] != '\n') {
       auto prev = detail::utf8_prev_grapheme(buffer_, cursor_);
       buffer_.erase(prev, cursor_ - prev);
@@ -768,39 +740,34 @@ void LineEditor::handle(KeyEvent evt) {
 
 void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t selected,
                               std::size_t scroll_offset, std::size_t& menu_rows) {
-  // Move to start of menu display
   if (menu_rows > 0) {
     std::print("\x1b[{}A", menu_rows);
   }
-  std::print("\r\x1b[J"); // clear to end of screen
+  std::print("\r\x1b[J");
 
   std::size_t term_height = detail::get_terminal_height();
   std::size_t max_visible = std::min(choices.size(), term_height - 2);
   std::size_t end = std::min(scroll_offset + max_visible, choices.size());
 
-  // Print prompt line
   std::print("{}\r\n", prompt_.text);
   std::size_t rows = 1;
 
-  // Scroll-up indicator
   if (scroll_offset > 0) {
-    std::print("  \xe2\x86\x91 {} more\r\n", scroll_offset); // ↑
+    std::print("  \xe2\x86\x91 {} more\r\n", scroll_offset);
     ++rows;
   }
 
-  // Print visible choices
   for (std::size_t i = scroll_offset; i < end; ++i) {
     if (i == selected) {
-      std::print("  \xe2\x96\xb8 \x1b[7m{}\x1b[0m\r\n", choices[i]); // ▸ + reverse video
+      std::print("  \xe2\x96\xb8 \x1b[7m{}\x1b[0m\r\n", choices[i]);
     } else {
       std::print("    {}\r\n", choices[i]);
     }
     ++rows;
   }
 
-  // Scroll-down indicator
   if (end < choices.size()) {
-    std::print("  \xe2\x86\x93 {} more\r\n", choices.size() - end); // ↓
+    std::print("  \xe2\x86\x93 {} more\r\n", choices.size() - end);
     ++rows;
   }
 
@@ -856,7 +823,6 @@ std::optional<ChoiceResult> LineEditor::choose(std::span<const std::string> choi
       adjust_scroll();
       break;
     case key::enter: {
-      // Collapse menu: move to start, clear, show selection inline
       if (menu_rows > 0) {
         std::print("\x1b[{}A", menu_rows);
       }
@@ -867,7 +833,6 @@ std::optional<ChoiceResult> LineEditor::choose(std::span<const std::string> choi
     }
     case key::ctrl_d:
     case key::escape: {
-      // Cancel: clear menu
       if (menu_rows > 0) {
         std::print("\x1b[{}A", menu_rows);
       }

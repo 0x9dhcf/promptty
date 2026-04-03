@@ -16,58 +16,83 @@
 
 namespace ptty {
 
+// --- Detail utilities ---
+
 namespace detail {
 extern volatile std::sig_atomic_t got_sigint;
 void sigint_handler(int sig);
 
-// UTF-8 utilities
+/// Returns the byte length of a UTF-8 codepoint from its lead byte (1-4).
 std::size_t utf8_codepoint_length(char lead);
+
+/// Decodes one UTF-8 codepoint at pos. Returns {codepoint, byte_length}.
 std::pair<char32_t, std::size_t> utf8_decode(std::string_view s, std::size_t pos);
+
+/// Advances past one grapheme cluster (base codepoint + combining marks).
 std::size_t utf8_next_grapheme(std::string_view s, std::size_t pos);
+
+/// Moves back one grapheme cluster.
 std::size_t utf8_prev_grapheme(std::string_view s, std::size_t pos);
+
+/// Terminal display width of a single codepoint (0 for combining, 2 for wide).
 int codepoint_display_width(char32_t cp);
+
+/// Total display width of a UTF-8 string.
 std::size_t display_width(std::string_view s);
 
-// ANSI escape utilities
+/// Display width of a string after stripping ANSI escape sequences.
 std::size_t ansi_visible_width(std::string_view s);
 
-// Terminal utilities
+/// Terminal column/row count via ioctl. Falls back to 80x24.
 std::size_t get_terminal_width();
 std::size_t get_terminal_height();
 } // namespace detail
 
+// --- Prompt ---
+
+/// Prompt string paired with its visible display width. Handles ANSI escapes
+/// transparently: visible_width excludes escape sequences so cursor math works.
 struct Prompt {
   std::string text;
   std::size_t visible_width {};
 
-  // Plain text prompt (no ANSI escapes) — implicit to allow string conversion
+  /// Plain text prompt. Visible width computed automatically.
   Prompt(std::string plain); // NOLINT(google-explicit-constructor)
   Prompt(const char *plain); // NOLINT(google-explicit-constructor)
 
-  // Raw ANSI prompt with explicit visible width
+  /// Raw ANSI prompt with caller-supplied visible width.
   Prompt(std::string raw, std::size_t vis_width);
 };
 
-// Tab completion types
+// --- Completion ---
+
+/// Passed to the completion callback with the current buffer and cursor position.
 struct CompletionRequest {
   std::string_view buffer;
   std::size_t cursor; // byte offset
 };
 
+/// Returned by the completion callback: the token range to replace and candidates.
 struct CompletionResult {
-  std::size_t replace_start;  // byte offset of token to replace
-  std::size_t replace_length; // byte length of token to replace
+  std::size_t replace_start;  // byte offset
+  std::size_t replace_length; // byte length
   std::vector<std::string> candidates;
 };
 
+/// User-supplied completion function.
 using CompletionCallback = std::function<CompletionResult(CompletionRequest)>;
 
-// Choice menu result
+// --- Choice menu ---
+
+/// Result of an interactive choice menu selection.
 struct ChoiceResult {
   std::size_t index;
   std::string value;
 };
 
+// --- Key input ---
+
+/// Recognized key types from raw terminal input.
 enum class key : std::uint8_t {
   character,
   enter,
@@ -94,15 +119,22 @@ enum class key : std::uint8_t {
   unknown
 };
 
+/// A key press: the key type and, for character keys, the UTF-8 bytes.
 struct KeyEvent {
   key k = key::unknown;
   std::string ch;
 };
 
 namespace detail {
+/// Blocking read of one key event from stdin in raw mode.
 KeyEvent read_key();
 } // namespace detail
 
+// --- Line editor ---
+
+/// Terminal line editor with UTF-8 support, multiline editing, history,
+/// tab completion, and interactive choice menus. Manages raw terminal mode
+/// via RAII; restores the original terminal state on destruction.
 class LineEditor {
   struct termios original_ {};
   std::string buffer_;
@@ -117,20 +149,22 @@ class LineEditor {
   void (*prev_sigint_)(int) = nullptr;
   std::optional<std::filesystem::path> history_file_;
 
-  // Completion state
   CompletionCallback completion_cb_;
   struct CompletionState {
     std::size_t replace_start;
     std::size_t replace_length;
     std::vector<std::string> candidates;
     std::size_t index;
-    std::string original; // original token before completion started
+    std::string original;
   };
   std::optional<CompletionState> completion_;
 
 public:
+  /// Sets up raw terminal mode and loads history from file (if provided).
   LineEditor(Prompt prompt, // NOLINT(google-explicit-constructor)
              std::optional<std::filesystem::path> history_file = std::nullopt);
+
+  /// Restores terminal and saves history.
   ~LineEditor();
 
   LineEditor(const LineEditor &) = delete;
@@ -138,8 +172,13 @@ public:
   LineEditor(LineEditor &&other) noexcept;
   LineEditor &operator=(LineEditor &&other) noexcept;
 
+  /// Reads one (possibly multiline) input. Returns nullopt on Ctrl-D / EOF.
   std::optional<std::string> get_line();
+
+  /// Registers a tab-completion callback.
   void set_completion(CompletionCallback cb);
+
+  /// Presents an interactive choice menu. Returns nullopt on cancel (Ctrl-D / ESC).
   std::optional<ChoiceResult> choose(std::span<const std::string> choices);
 
 private:
@@ -152,7 +191,6 @@ private:
                     std::size_t selected, std::size_t scroll_offset,
                     std::size_t &menu_rows);
 
-  // Multiline buffer helpers
   std::size_t current_line() const;
   std::size_t line_count() const;
   std::size_t line_start(std::size_t n) const;
