@@ -1,0 +1,209 @@
+# ============================================================================
+# Curated clang-tidy for C++23 — opinionated but not obnoxious
+# ============================================================================
+#
+# Philosophy:
+#   ✓ Catch real bugs and UB
+#   ✓ Nudge toward modern C++23 idioms
+#   ✓ Flag clear performance wins
+#   ✓ Keep readability checks reasonable
+#   ✗ No formatting wars (leave that to clang-format)
+#   ✗ No checks that produce mostly false positives
+#   ✗ No "rewrite your entire codebase" checks
+#
+# Usage:
+#   Drop in repo root. Run with:
+#     clang-tidy --extra-arg=-std=c++23 src/**/*.cpp
+#
+# Tip:  Use NOLINTBEGIN / NOLINTEND sparingly for justified suppressions.
+# ============================================================================
+
+---
+# Baseline: enable these groups, then subtract the noisy/controversial ones.
+Checks: >
+  -*,
+
+  # ── Bug magnets ──────────────────────────────────────────────────────
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-branch-clone,
+  -bugprone-exception-escape,
+
+  # ── C++ Core Guidelines (cherry-picked) ──────────────────────────────
+  cppcoreguidelines-avoid-goto,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-interfaces-global-init,
+  cppcoreguidelines-macro-usage,
+  cppcoreguidelines-no-malloc,
+  cppcoreguidelines-prefer-member-initializer,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-pro-type-static-cast-downcast,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-special-member-functions,
+  cppcoreguidelines-virtual-class-destructor,
+  cppcoreguidelines-rvalue-reference-param-not-moved,
+  cppcoreguidelines-misleading-capture-default-by-value,
+  cppcoreguidelines-avoid-const-or-ref-data-members,
+
+  # ── Modernize to C++17/20/23 ─────────────────────────────────────────
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -modernize-concat-nested-namespaces,
+  -modernize-return-braced-init-list,
+  -modernize-use-nodiscard,
+
+  # ── Performance ──────────────────────────────────────────────────────
+  performance-*,
+
+  # ── Readability (the sane subset) ────────────────────────────────────
+  readability-avoid-const-params-in-decls,
+  readability-avoid-return-with-void-value,
+  readability-container-size-empty,
+  readability-const-return-type,
+  readability-delete-null-pointer,
+  readability-duplicate-include,
+  readability-else-after-return,
+  readability-implicit-bool-conversion,
+  readability-inconsistent-declaration-parameter-name,
+  readability-isolate-declaration,
+  readability-make-member-function-const,
+  readability-misleading-indentation,
+  readability-misplaced-array-index,
+  readability-non-const-parameter,
+  readability-qualified-auto,
+  readability-redundant-access-specifiers,
+  readability-redundant-control-flow,
+  readability-redundant-declaration,
+  readability-redundant-function-ptr-dereference,
+  readability-redundant-member-init,
+  readability-redundant-smartptr-get,
+  readability-redundant-string-cstr,
+  readability-redundant-string-init,
+  readability-simplify-boolean-expr,
+  readability-simplify-subscript-expr,
+  readability-static-accessed-through-instance,
+  readability-static-definition-in-anonymous-namespace,
+  readability-string-compare,
+  readability-suspicious-call-argument,
+  readability-uniqueptr-delete-release,
+  readability-use-std-min-max,
+
+  # ── Concurrency ──────────────────────────────────────────────────────
+  concurrency-*,
+
+  # ── Misc useful checks ──────────────────────────────────────────────
+  misc-const-correctness,
+  misc-definitions-in-headers,
+  misc-header-include-cycle,
+  misc-include-cleaner,
+  misc-misleading-bidirectional,
+  misc-misleading-identifier,
+  misc-no-recursion,
+  misc-non-copyable-objects,
+  misc-redundant-expression,
+  misc-static-assert,
+  misc-throw-by-value-catch-by-reference,
+  misc-unconventional-assign-operator,
+  misc-uniqueptr-reset-release,
+  misc-unused-alias-decls,
+  misc-unused-using-decls,
+  misc-use-internal-linkage,
+
+  # ── Portability ──────────────────────────────────────────────────────
+  portability-*,
+
+# ============================================================================
+# Check-specific options
+# ============================================================================
+CheckOptions:
+  # -- modernize ------------------------------------------------------------
+  - key:   modernize-use-auto.MinTypeNameLength
+    value: '6'
+  - key:   modernize-use-auto.RemoveStars
+    value: 'false'
+  - key:   modernize-loop-convert.MinConfidence
+    value: 'reasonable'
+  - key:   modernize-replace-auto-ptr.IncludeStyle
+    value: 'google'
+  - key:   modernize-use-default-member-init.UseAssignment
+    value: 'true'
+  - key:   modernize-use-emplace.ContainersWithPushBack
+    value: '::std::vector;::std::deque;::std::list'
+  - key:   modernize-use-nullptr.NullMacros
+    value: 'NULL'
+  - key:   modernize-use-std-print.ReplacementPrintFunction
+    value: 'std::print'
+  - key:   modernize-use-std-print.ReplacementPrintlnFunction
+    value: 'std::println'
+
+  # -- readability ----------------------------------------------------------
+  - key:   readability-implicit-bool-conversion.AllowPointerConditions
+    value: 'true'
+  - key:   readability-implicit-bool-conversion.AllowIntegerConditions
+    value: 'false'
+  - key:   readability-qualified-auto.AddConstToQualified
+    value: 'true'
+
+  # -- performance ----------------------------------------------------------
+  - key:   performance-move-const-arg.CheckTriviallyCopyableMove
+    value: 'false'
+  - key:   performance-unnecessary-value-param.AllowedTypes
+    value: 'std::string_view;std::span;std::function'
+  - key:   performance-for-range-copy.WarnOnAllAutoCopies
+    value: 'true'
+
+  # -- bugprone -------------------------------------------------------------
+  - key:   bugprone-argument-comment.StrictMode
+    value: 'false'
+  - key:   bugprone-assert-side-effect.AssertMacros
+    value: 'assert;ASSERT;Q_ASSERT'
+  - key:   bugprone-misplaced-widening-cast.CheckImplicitCasts
+    value: 'true'
+  - key:   bugprone-sizeof-expression.WarnOnSizeOfPointer
+    value: 'true'
+  - key:   bugprone-string-constructor.WarnOnLargeLength
+    value: 'true'
+  - key:   bugprone-suspicious-string-compare.WarnOnImplicitComparison
+    value: 'true'
+  - key:   bugprone-unused-return-value.CheckedFunctions
+    value: '::std::async;::std::launder;::std::remove;::std::remove_if;::std::unique;::std::unique_ptr::release;::std::basic_string::empty;::std::vector::empty;::std::back_inserter;::std::distance;::std::find;::std::find_if;::std::inserter;::std::lower_bound;::std::make_pair;::std::make_tuple;::std::max;::std::min;::std::next;::std::prev;::std::search;::std::upper_bound'
+
+  # -- misc -----------------------------------------------------------------
+  - key:   misc-const-correctness.WarnPointersAsValues
+    value: 'true'
+  - key:   misc-const-correctness.TransformPointersAsValues
+    value: 'false'
+  - key:   misc-include-cleaner.IgnoreHeaders
+    value: ''
+  - key:   misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: 'true'
+  - key:   misc-use-internal-linkage.FixMode
+    value: 'UseAnonymousNamespace'
+
+  # -- cppcoreguidelines ----------------------------------------------------
+  - key:   cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
+    value: 'true'
+  - key:   cppcoreguidelines-special-member-functions.AllowMissingMoveFunctions
+    value: 'false'
+  - key:   cppcoreguidelines-macro-usage.AllowedRegexp
+    value: '^(DEBUG_|PLATFORM_|EXPORT_)'
+
+# ============================================================================
+# Treat all enabled checks as warnings (not errors) by default.
+# Promote specific checks to errors for CI gating if desired.
+# ============================================================================
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  bugprone-dangling-handle,
+  bugprone-undefined-memory-manipulation,
+  bugprone-move-forwarding-reference,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-slicing,
+
+FormatStyle: 'file'
+HeaderFilterRegex: '.*'
+SystemHeaders: false
+UseColor: true
+...

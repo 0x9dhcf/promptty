@@ -1,0 +1,5 @@
+foreach(example example)
+  add_executable(${example} ${example}.cpp)
+  target_link_libraries(${example} PRIVATE promptty::promptty)
+  target_compile_options(${example} PRIVATE ${PROMPTTY_WARNINGS})
+endforeach()
