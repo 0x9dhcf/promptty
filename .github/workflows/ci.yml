@@ -15,10 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # GCC 15 is needed for full C++23 <print> support.
+      # Ubuntu 24.04 ships GCC 14 whose libstdc++ was built before
+      # std::print / std::println were finalized.
       - name: Install dependencies
         run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build g++-15
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 100
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
