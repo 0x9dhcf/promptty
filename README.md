@@ -2,6 +2,7 @@
 
 ![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)
 ![build](https://github.com/0x9dhcf/promptty/actions/workflows/ci.yml/badge.svg)
+![platform](https://img.shields.io/badge/platform-Linux-informational.svg?logo=linux&logoColor=white)
 ![license](https://img.shields.io/badge/license-MIT-green.svg)
 
 Lightweight C++ line editor library for terminal applications. UTF-8 aware with
