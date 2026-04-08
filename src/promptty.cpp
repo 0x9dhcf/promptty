@@ -739,7 +739,8 @@ void LineEditor::handle(KeyEvent evt) {
 // --- Choice menu ---
 
 void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t selected,
-                              std::size_t scroll_offset, std::size_t& menu_rows) {
+                              std::size_t scroll_offset, std::size_t& menu_rows,
+                              std::string_view header) {
   if (menu_rows > 0) {
     std::print("\x1b[{}A", menu_rows);
   }
@@ -749,7 +750,7 @@ void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t 
   std::size_t max_visible = std::min(choices.size(), term_height - 2);
   std::size_t end = std::min(scroll_offset + max_visible, choices.size());
 
-  std::print("{}\r\n", prompt_.text);
+  std::print("{}{}\r\n", prompt_.text, header);
   std::size_t rows = 1;
 
   if (scroll_offset > 0) {
@@ -775,7 +776,8 @@ void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t 
   std::fflush(stdout);
 }
 
-std::optional<ChoiceResult> LineEditor::choose(std::span<const std::string> choices) {
+std::optional<ChoiceResult> LineEditor::choose(std::span<const std::string> choices,
+                                               std::string_view header) {
   if (choices.empty())
     return std::nullopt;
 
@@ -794,7 +796,7 @@ std::optional<ChoiceResult> LineEditor::choose(std::span<const std::string> choi
     }
   };
 
-  refresh_menu(choices, selected, scroll_offset, menu_rows);
+  refresh_menu(choices, selected, scroll_offset, menu_rows, header);
 
   for (;;) {
     auto evt = detail::read_key();
@@ -827,7 +829,7 @@ std::optional<ChoiceResult> LineEditor::choose(std::span<const std::string> choi
         std::print("\x1b[{}A", menu_rows);
       }
       std::print("\r\x1b[J");
-      std::print("{}{}\r\n", prompt_.text, choices[selected]);
+      std::print("{}{}{}\r\n", prompt_.text, header, choices[selected]);
       std::fflush(stdout);
       return ChoiceResult{.index = selected, .value = std::string(choices[selected])};
     }
@@ -844,7 +846,7 @@ std::optional<ChoiceResult> LineEditor::choose(std::span<const std::string> choi
       continue; // ignore other keys, skip redraw
     }
 
-    refresh_menu(choices, selected, scroll_offset, menu_rows);
+    refresh_menu(choices, selected, scroll_offset, menu_rows, header);
   }
 }
 

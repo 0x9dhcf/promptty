@@ -179,7 +179,9 @@ public:
   void set_completion(CompletionCallback cb);
 
   /// Presents an interactive choice menu. Returns nullopt on cancel (Ctrl-D / ESC).
-  std::optional<ChoiceResult> choose(std::span<const std::string> choices);
+  /// An optional header is displayed above the choices.
+  std::optional<ChoiceResult> choose(std::span<const std::string> choices,
+                                     std::string_view header = "");
 
 private:
   void load_history();
@@ -189,7 +191,7 @@ private:
   void handle_tab();
   void refresh_menu(std::span<const std::string> choices,
                     std::size_t selected, std::size_t scroll_offset,
-                    std::size_t &menu_rows);
+                    std::size_t &menu_rows, std::string_view header);
 
   std::size_t current_line() const;
   std::size_t line_count() const;

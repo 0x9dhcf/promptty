@@ -17,7 +17,7 @@ int main() {
       "\xf0\x9f\x8c\x8a mistral-large", // 🌊
   };
 
-  auto choice = editor.choose(models);
+  auto choice = editor.choose(models, "Choose a model to start:");
   if (choice) {
     std::println("\xe2\x9c\x85 selected: {} (index {})", choice->value, choice->index); // ✅
   } else {
