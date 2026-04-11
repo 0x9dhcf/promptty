@@ -14,6 +14,16 @@ else()
 endif()
 option(PROMPTTY_BUILD_EXAMPLES "Build examples" ${_promptty_toplevel})
 
+# --- CPM dependencies ---
+include(cmake/CPM.cmake)
+
+CPMAddPackage(
+  NAME utf8proc
+  GITHUB_REPOSITORY JuliaStrings/utf8proc
+  VERSION 2.9.0
+  OPTIONS "UTF8PROC_INSTALL ON"
+)
+
 # --- Warning flags ---
 set(PROMPTTY_WARNINGS
   -Wall -Wextra -Wpedantic -Wconversion -Wshadow
@@ -42,44 +52,47 @@ target_include_directories(promptty
 
 target_compile_features(promptty PUBLIC cxx_std_23)
 target_compile_options(promptty PRIVATE ${PROMPTTY_WARNINGS})
+target_link_libraries(promptty PRIVATE $<BUILD_INTERFACE:utf8proc>)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   target_compile_options(promptty PRIVATE -march=native)
 endif()
 
-# --- Install ---
-include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
+# --- Install (only when built standalone) ---
+if(_promptty_toplevel)
+  include(GNUInstallDirs)
+  include(CMakePackageConfigHelpers)
 
-install(TARGETS promptty
-  EXPORT prompttyTargets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+  install(TARGETS promptty
+    EXPORT prompttyTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
 
-install(DIRECTORY include/promptty DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(DIRECTORY include/promptty DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-install(EXPORT prompttyTargets
-  NAMESPACE promptty::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/promptty
-)
+  install(EXPORT prompttyTargets
+    NAMESPACE promptty::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/promptty
+  )
 
-configure_package_config_file(
-  cmake/prompttyConfig.cmake.in
-  "${CMAKE_CURRENT_BINARY_DIR}/prompttyConfig.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/promptty
-)
+  configure_package_config_file(
+    cmake/prompttyConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/prompttyConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/promptty
+  )
 
-write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/prompttyConfigVersion.cmake"
-  COMPATIBILITY SameMajorVersion
-)
+  write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/prompttyConfigVersion.cmake"
+    COMPATIBILITY SameMajorVersion
+  )
 
-install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/prompttyConfig.cmake"
-  "${CMAKE_CURRENT_BINARY_DIR}/prompttyConfigVersion.cmake"
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/promptty
-)
+  install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/prompttyConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/prompttyConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/promptty
+  )
+endif()
 
 # --- Subdirectories ---
 if(PROMPTTY_BUILD_EXAMPLES)

@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <termios.h>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -116,8 +117,36 @@ enum class key : std::uint8_t {
   ctrl_w,
   ctrl_d,
   ctrl_l,
+  // Bindable keys (also exposed via bindable_key for type-safe binding).
+  ctrl_g,
+  ctrl_o,
+  ctrl_r,
+  ctrl_t,
+  ctrl_x,
+  ctrl_y,
+  page_up,
+  page_down,
+  f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
   unknown
 };
+
+/// Subset of \p key that embedders are allowed to rebind. Built-in editor
+/// navigation keys (Enter, arrows, Ctrl-A/E/K/U/W, history, etc.) are
+/// deliberately excluded so they can never be silently overridden.
+enum class bindable_key : std::uint8_t {
+  ctrl_g,
+  ctrl_o,
+  ctrl_r,
+  ctrl_t,
+  ctrl_x,
+  ctrl_y,
+  page_up,
+  page_down,
+  f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+};
+
+/// Callback invoked when a bound key fires from inside get_line().
+using KeyCallback = std::function<void()>;
 
 /// A key press: the key type and, for character keys, the UTF-8 bytes.
 struct KeyEvent {
@@ -159,6 +188,8 @@ class LineEditor {
   };
   std::optional<CompletionState> completion_;
 
+  std::unordered_map<bindable_key, KeyCallback> bindings_;
+
 public:
   /// Sets up raw terminal mode and loads history from file (if provided).
   LineEditor(Prompt prompt, // NOLINT(google-explicit-constructor)
@@ -177,6 +208,16 @@ public:
 
   /// Registers a tab-completion callback.
   void set_completion(CompletionCallback cb);
+
+  /// Binds \p k to \p cb. The callback fires from inside get_line() when the
+  /// key is pressed; the editor refreshes the line afterward. Pass an empty
+  /// callback to remove a binding. Only keys in \p bindable_key can be bound,
+  /// so editor navigation cannot be silently overridden.
+  void bind_key(bindable_key k, KeyCallback cb);
+
+  /// Replaces the prompt in-place without destroying the editor. Safe to call
+  /// from inside a key binding callback (unlike constructing a new editor).
+  void set_prompt(Prompt prompt);
 
   /// Presents an interactive choice menu. Returns nullopt on cancel (Ctrl-D / ESC).
   /// An optional header is displayed above the choices.

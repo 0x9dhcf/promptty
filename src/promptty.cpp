@@ -7,7 +7,11 @@
 #include <print>
 #include <sys/ioctl.h>
 #include <unistd.h>
-#include <wchar.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#include "widechar_width.h"
+#pragma GCC diagnostic pop
+#include <utf8proc.h>
 
 namespace ptty {
 
@@ -67,70 +71,165 @@ std::pair<char32_t, std::size_t> utf8_decode(std::string_view s, std::size_t pos
   return {cp, len};
 }
 
-static bool is_combining(char32_t cp) {
-  return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x0483 && cp <= 0x0489) ||
-         (cp >= 0x0591 && cp <= 0x05BD) || (cp >= 0x0610 && cp <= 0x061A) ||
-         (cp >= 0x064B && cp <= 0x065F) || (cp == 0x0670) || (cp >= 0x06D6 && cp <= 0x06DC) ||
-         (cp >= 0x06DF && cp <= 0x06E4) || (cp >= 0x06E7 && cp <= 0x06E8) ||
-         (cp >= 0x06EA && cp <= 0x06ED) || (cp >= 0x0730 && cp <= 0x074A) ||
-         (cp >= 0x0900 && cp <= 0x0903) || (cp >= 0x093A && cp <= 0x094F) ||
-         (cp >= 0x0951 && cp <= 0x0957) || (cp >= 0x1AB0 && cp <= 0x1AFF) ||
-         (cp >= 0x1DC0 && cp <= 0x1DFF) || (cp >= 0x20D0 && cp <= 0x20FF) ||
-         (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xFE20 && cp <= 0xFE2F) ||
-         (cp >= 0xE0100 && cp <= 0xE01EF);
-}
-
-std::size_t utf8_next_grapheme(std::string_view s, std::size_t pos) {
-  if (pos >= s.size())
-    return s.size();
-  auto [cp, len] = utf8_decode(s, pos);
-  pos += len;
-  while (pos < s.size()) {
-    auto [next_cp, next_len] = utf8_decode(s, pos);
-    if (!is_combining(next_cp))
-      break;
-    pos += next_len;
+/// Returns the column width of \p cp, overriding utf8proc for emoji codepoints
+/// that modern terminals render at width 2 even though their formal Unicode
+/// East_Asian_Width is Neutral. Source: emoji-data.txt's Emoji_Presentation=Yes
+/// property, grouped into broad ranges. Keep this list in sync with mdtty.
+/// True if \p cp is an Emoji=Yes / Emoji_Presentation=No codepoint that
+/// terminals nevertheless render at width 2. Unicode classifies these as
+/// "default text presentation," but in practice modern terminals (kitty,
+/// wezterm, ghostty, foot, GNOME Terminal, iTerm2) ignore that and render
+/// them as emoji. This list is the canonical set; keep it in sync with
+/// mdtty's copy.
+bool is_text_presentation_wide_emoji(uint32_t cp) {
+  // Sorted by codepoint for readability.
+  switch (cp) {
+  case 0x203C: case 0x2049: case 0x2122: case 0x2139:
+  case 0x2194: case 0x2195: case 0x2196: case 0x2197: case 0x2198: case 0x2199:
+  case 0x21A9: case 0x21AA:
+  case 0x2328: case 0x23CF:
+  case 0x24C2:
+  case 0x25AA: case 0x25AB: case 0x25B6: case 0x25C0:
+  case 0x25FB: case 0x25FC:
+  case 0x2600: case 0x2601: case 0x2602: case 0x2603: case 0x2604:
+  case 0x260E: case 0x2611:
+  case 0x2618: case 0x261D: case 0x2620:
+  case 0x2622: case 0x2623: case 0x2626: case 0x262A:
+  case 0x262E: case 0x262F:
+  case 0x2638: case 0x2639: case 0x263A:
+  case 0x2640: case 0x2642:
+  case 0x265F: case 0x2660: case 0x2663: case 0x2665: case 0x2666: case 0x2668:
+  case 0x267B: case 0x267E:
+  case 0x2692: case 0x2694: case 0x2695: case 0x2696: case 0x2697:
+  case 0x2699: case 0x269B: case 0x269C:
+  case 0x26A0: case 0x26A7:
+  case 0x26B0: case 0x26B1:
+  case 0x26C8: case 0x26CF: case 0x26D1:
+  case 0x26D3: case 0x26E9:
+  case 0x26F0: case 0x26F1: case 0x26F4: case 0x26F7: case 0x26F8: case 0x26F9:
+  case 0x2702: case 0x2708: case 0x2709:
+  case 0x270C: case 0x270D: case 0x270F: case 0x2712:
+  case 0x2714: case 0x2716: case 0x271D: case 0x2721:
+  case 0x2733: case 0x2734: case 0x2744: case 0x2747:
+  case 0x2763: case 0x2764: case 0x27A1:
+  case 0x2934: case 0x2935:
+  case 0x2B05: case 0x2B06: case 0x2B07:
+  case 0x3030: case 0x303D: case 0x3297: case 0x3299:
+    return true;
+  default:
+    return false;
   }
-  return pos;
 }
 
-std::size_t utf8_prev_grapheme(std::string_view s, std::size_t pos) {
-  if (pos == 0)
+/// Returns the column width of \p cp using the widecharwidth table, which is
+/// generated from the upstream Unicode data files (UnicodeData.txt,
+/// EastAsianWidth.txt, emoji-data.txt). This is the same source modern
+/// terminals (kitty, wezterm, ghostty, foot, GNOME Terminal, iTerm2) use.
+int terminal_charwidth(utf8proc_int32_t cp) {
+  if (cp < 0)
+    return 1;
+  // Default-text emoji that terminals render wide anyway. Checked first
+  // because widecharwidth would otherwise report these as width 1.
+  if (is_text_presentation_wide_emoji(static_cast<uint32_t>(cp)))
+    return 2;
+  int w = widechar_wcwidth(static_cast<uint32_t>(cp));
+  if (w == widechar_combining)
     return 0;
-  auto step_back = [&]() {
-    if (pos == 0)
-      return;
-    --pos;
-    while (pos > 0 && (static_cast<unsigned char>(s[pos]) & 0xC0) == 0x80)
-      --pos;
-  };
-  step_back();
-  while (pos > 0) {
-    auto [cp, len] = utf8_decode(s, pos);
-    if (!is_combining(cp))
-      break;
-    step_back();
-  }
-  return pos;
+  // widened_in_9: Unicode 9 promoted these to wide because of emoji
+  // presentation. Modern terminals render them at width 2.
+  if (w == widechar_widened_in_9)
+    return 2;
+  // Other negative codes (nonprint/ambiguous/private/unassigned) fall back
+  // to width 1: safe default for "printable but we don't know."
+  if (w < 0)
+    return 1;
+  return w;
 }
 
 int codepoint_display_width(char32_t cp) {
   if (cp == 0)
     return 0;
-  if (is_combining(cp))
+  int w = terminal_charwidth(static_cast<utf8proc_int32_t>(cp));
+  return (w < 0) ? 0 : w;
+}
+
+/// Returns the byte offset just past the grapheme cluster starting at \p pos.
+std::size_t utf8_next_grapheme(std::string_view s, std::size_t pos) {
+  if (pos >= s.size())
+    return s.size();
+  auto [cp, len] = utf8_decode(s, pos);
+  pos += len;
+  utf8proc_int32_t state = 0;
+  utf8proc_int32_t prev_cp = static_cast<utf8proc_int32_t>(cp);
+  while (pos < s.size()) {
+    auto [next_cp, next_len] = utf8_decode(s, pos);
+    if (utf8proc_grapheme_break_stateful(prev_cp, static_cast<utf8proc_int32_t>(next_cp), &state))
+      break;
+    prev_cp = static_cast<utf8proc_int32_t>(next_cp);
+    pos += next_len;
+  }
+  return pos;
+}
+
+/// Returns the byte offset of the start of the grapheme cluster ending at \p pos.
+/// Strategy: step back to a "safe" boundary that's never inside a cluster, then
+/// walk forward computing cluster boundaries until the last one before \p pos.
+std::size_t utf8_prev_grapheme(std::string_view s, std::size_t pos) {
+  if (pos == 0)
     return 0;
-  int w = wcwidth(static_cast<wchar_t>(cp));
-  return (w < 0) ? 1 : w;
+  if (pos > s.size())
+    pos = s.size();
+
+  // Walk back at least one codepoint, then keep walking back while we're
+  // crossing combining marks / extending characters. A safe-enough heuristic:
+  // any ASCII byte (< 0x80) is always its own grapheme start, so it's a safe
+  // boundary. If we don't find one within ~32 bytes we just take what we have.
+  std::size_t safe = pos;
+  for (int i = 0; i < 32 && safe > 0; ++i) {
+    --safe;
+    while (safe > 0 && (static_cast<unsigned char>(s[safe]) & 0xC0) == 0x80)
+      --safe;
+    if (static_cast<unsigned char>(s[safe]) < 0x80)
+      break;
+  }
+
+  // Walk forward from safe, tracking the most recent cluster boundary <= pos.
+  std::size_t cur = safe;
+  std::size_t last_boundary = safe;
+  utf8proc_int32_t state = 0;
+  utf8proc_int32_t prev_cp = 0;
+  while (cur < pos) {
+    auto [cp, len] = utf8_decode(s, cur);
+    if (len == 0)
+      break;
+    if (prev_cp != 0 &&
+        utf8proc_grapheme_break_stateful(prev_cp, static_cast<utf8proc_int32_t>(cp), &state)) {
+      last_boundary = cur;
+    }
+    prev_cp = static_cast<utf8proc_int32_t>(cp);
+    cur += len;
+  }
+  return last_boundary;
 }
 
 std::size_t display_width(std::string_view s) {
   std::size_t width = 0;
   std::size_t pos = 0;
+  utf8proc_int32_t state = 0;
+  utf8proc_int32_t prev_cp = 0;
   while (pos < s.size()) {
     auto [cp, len] = utf8_decode(s, pos);
-    int w = codepoint_display_width(cp);
-    if (w > 0)
-      width += static_cast<std::size_t>(w);
+    if (len == 0)
+      break;
+    bool boundary =
+        (prev_cp == 0) ||
+        utf8proc_grapheme_break_stateful(prev_cp, static_cast<utf8proc_int32_t>(cp), &state);
+    if (boundary) {
+      int w = codepoint_display_width(cp);
+      if (w > 0)
+        width += static_cast<std::size_t>(w);
+    }
+    prev_cp = static_cast<utf8proc_int32_t>(cp);
     pos += len;
   }
   return width;
@@ -220,18 +319,30 @@ KeyEvent read_key() {
     return make_key(key::ctrl_d);
   case '\x05':
     return make_key(key::ctrl_e);
+  case '\x07':
+    return make_key(key::ctrl_g);
   case '\x0b':
     return make_key(key::ctrl_k);
   case '\x0c':
     return make_key(key::ctrl_l);
   case '\x0e':
     return make_key(key::ctrl_n);
+  case '\x0f':
+    return make_key(key::ctrl_o);
   case '\x10':
     return make_key(key::ctrl_p);
+  case '\x12':
+    return make_key(key::ctrl_r);
+  case '\x14':
+    return make_key(key::ctrl_t);
   case '\x15':
     return make_key(key::ctrl_u);
   case '\x17':
     return make_key(key::ctrl_w);
+  case '\x18':
+    return make_key(key::ctrl_x);
+  case '\x19':
+    return make_key(key::ctrl_y);
   default:
     break;
   }
@@ -252,6 +363,19 @@ KeyEvent read_key() {
       return make_key(key::alt_enter);
     }
 
+    if (seq0 == 'O') { // SS3: F1..F4
+      char seq1{};
+      if (::read(STDIN_FILENO, &seq1, 1) <= 0)
+        return make_key(key::unknown);
+      switch (seq1) {
+      case 'P': return make_key(key::f1);
+      case 'Q': return make_key(key::f2);
+      case 'R': return make_key(key::f3);
+      case 'S': return make_key(key::f4);
+      default:  return make_key(key::unknown);
+      }
+    }
+
     if (seq0 == '[') { // CSI sequence
       char seq1{};
       if (::read(STDIN_FILENO, &seq1, 1) <= 0) {
@@ -270,14 +394,35 @@ KeyEvent read_key() {
         return make_key(key::home);
       case 'F':
         return make_key(key::end);
-      case '3': {
-        char tilde{};
-        ::read(STDIN_FILENO, &tilde, 1);
-        return make_key(key::del);
-      }
       default:
-        return make_key(key::unknown);
+        break;
       }
+      // Numeric CSI: ESC [ N (N) ~  -- PageUp/Down, Delete, F5-F12.
+      if (seq1 >= '0' && seq1 <= '9') {
+        std::string num(1, seq1);
+        for (int i = 0; i < 3; ++i) {
+          char c{};
+          if (::read(STDIN_FILENO, &c, 1) <= 0)
+            return make_key(key::unknown);
+          if (c == '~')
+            break;
+          if (c < '0' || c > '9')
+            return make_key(key::unknown);
+          num += c;
+        }
+        if (num == "3")  return make_key(key::del);
+        if (num == "5")  return make_key(key::page_up);
+        if (num == "6")  return make_key(key::page_down);
+        if (num == "15") return make_key(key::f5);
+        if (num == "17") return make_key(key::f6);
+        if (num == "18") return make_key(key::f7);
+        if (num == "19") return make_key(key::f8);
+        if (num == "20") return make_key(key::f9);
+        if (num == "21") return make_key(key::f10);
+        if (num == "23") return make_key(key::f11);
+        if (num == "24") return make_key(key::f12);
+      }
+      return make_key(key::unknown);
     }
     return make_key(key::unknown);
   }
@@ -304,6 +449,8 @@ KeyEvent read_key() {
 } // namespace detail
 
 // --- LineEditor ---
+
+static std::optional<bindable_key> to_bindable(key k);
 
 LineEditor::LineEditor(Prompt prompt, std::optional<std::filesystem::path> history_file)
     : prompt_(std::move(prompt)), continuation_(std::string(prompt_.visible_width, ' ')),
@@ -336,7 +483,9 @@ LineEditor::LineEditor(LineEditor&& other) noexcept
       continuation_{std::move(other.continuation_)}, cursor_{other.cursor_},
       history_{std::move(other.history_)}, hindex_{other.hindex_},
       display_rows_{other.display_rows_}, owns_terminal_{other.owns_terminal_},
-      prev_sigint_{other.prev_sigint_}, history_file_{std::move(other.history_file_)} {
+      prev_sigint_{other.prev_sigint_}, history_file_{std::move(other.history_file_)},
+      completion_cb_{std::move(other.completion_cb_)}, completion_{std::move(other.completion_)},
+      bindings_{std::move(other.bindings_)} {
   other.owns_terminal_ = false;
 }
 
@@ -357,6 +506,9 @@ LineEditor& LineEditor::operator=(LineEditor&& other) noexcept {
     display_rows_ = other.display_rows_;
     owns_terminal_ = other.owns_terminal_;
     prev_sigint_ = other.prev_sigint_;
+    completion_cb_ = std::move(other.completion_cb_);
+    completion_ = std::move(other.completion_);
+    bindings_ = std::move(other.bindings_);
 
     other.owns_terminal_ = false;
   }
@@ -441,6 +593,16 @@ std::optional<std::string> LineEditor::get_line() {
       if (hindex_ > 0)
         hindex_--;
       return buffer_;
+    }
+
+    // Dispatch user-bound keys before built-in handling.
+    if (auto bk = to_bindable(evt.k)) {
+      auto it = bindings_.find(*bk);
+      if (it != bindings_.end()) {
+        it->second();
+        refresh();
+        continue;
+      }
     }
 
     handle(evt);
@@ -537,6 +699,46 @@ void LineEditor::refresh() {
 
 void LineEditor::set_completion(CompletionCallback cb) {
   completion_cb_ = std::move(cb);
+}
+
+void LineEditor::bind_key(bindable_key k, KeyCallback cb) {
+  if (cb)
+    bindings_[k] = std::move(cb);
+  else
+    bindings_.erase(k);
+}
+
+void LineEditor::set_prompt(Prompt prompt) {
+  prompt_ = std::move(prompt);
+  continuation_ = Prompt(std::string(prompt_.visible_width, ' '));
+}
+
+/// Maps a \p key to its bindable counterpart, or returns nullopt if the key
+/// is reserved by the editor for navigation/editing.
+static std::optional<bindable_key> to_bindable(key k) {
+  switch (k) {
+  case key::ctrl_g: return bindable_key::ctrl_g;
+  case key::ctrl_o: return bindable_key::ctrl_o;
+  case key::ctrl_r: return bindable_key::ctrl_r;
+  case key::ctrl_t: return bindable_key::ctrl_t;
+  case key::ctrl_x: return bindable_key::ctrl_x;
+  case key::ctrl_y: return bindable_key::ctrl_y;
+  case key::page_up: return bindable_key::page_up;
+  case key::page_down: return bindable_key::page_down;
+  case key::f1: return bindable_key::f1;
+  case key::f2: return bindable_key::f2;
+  case key::f3: return bindable_key::f3;
+  case key::f4: return bindable_key::f4;
+  case key::f5: return bindable_key::f5;
+  case key::f6: return bindable_key::f6;
+  case key::f7: return bindable_key::f7;
+  case key::f8: return bindable_key::f8;
+  case key::f9: return bindable_key::f9;
+  case key::f10: return bindable_key::f10;
+  case key::f11: return bindable_key::f11;
+  case key::f12: return bindable_key::f12;
+  default: return std::nullopt;
+  }
 }
 
 void LineEditor::handle_tab() {
