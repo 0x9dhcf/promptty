@@ -12,6 +12,7 @@ interactive choice menus.
 ## Features
 
 - **Line editing** with cursor movement, kill/yank, and emacs keybindings
+- **User-configurable key bindings**
 - **UTF-8 / Unicode** support with grapheme-aware cursor and display width
 - **ANSI color prompts** with correct cursor positioning
 - **Multiline editing** via Alt+Enter and backslash continuation
@@ -22,10 +23,11 @@ interactive choice menus.
 
 ## Dependencies
 
-- C++23 compiler (GCC 14+, Clang 18+)
+- C++23 compiler with `<print>` support (GCC 15+)
 - CMake 3.21+
 
-No external library dependencies.
+[utf8proc](https://github.com/JuliaStrings/utf8proc) is fetched automatically
+via CPM during configure; no manual install needed.
 
 ## Build
 
