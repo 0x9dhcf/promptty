@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag matches CMakeLists.txt version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          cmake_ver=$(grep -oP 'project\(promptty VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          if [ "$tag" != "$cmake_ver" ]; then
+            echo "::error::tag $GITHUB_REF_NAME ($tag) does not match CMakeLists.txt version ($cmake_ver)"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-15
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 100
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100
+
+      - name: Configure & build (release)
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+
+      - name: Create source tarball
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          git archive --format=tar.gz \
+            --prefix="promptty-${ver}/" \
+            -o "promptty-${ver}.tar.gz" \
+            HEAD
+
+      - name: Extract changelog section
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v ver="$ver" '
+            $0 ~ "^## \\["ver"\\]" {flag=1; next}
+            /^## \[/ && flag {exit}
+            flag
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::error::no changelog section found for version $ver"
+            exit 1
+          fi
+          echo "--- RELEASE_NOTES.md ---"
+          cat RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+          files: promptty-*.tar.gz
+          fail_on_unmatched_files: true
