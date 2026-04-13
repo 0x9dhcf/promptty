@@ -77,11 +77,11 @@ std::pair<char32_t, std::size_t> utf8_decode(std::string_view s, std::size_t pos
 /// property, grouped into broad ranges. Keep this list in sync with mdtty.
 /// True if \p cp is an Emoji=Yes / Emoji_Presentation=No codepoint that
 /// terminals nevertheless render at width 2. Unicode classifies these as
-/// "default text presentation," but in practice modern terminals (kitty,
+// "default text presentation," but in practice modern terminals (kitty,
 /// wezterm, ghostty, foot, GNOME Terminal, iTerm2) ignore that and render
 /// them as emoji. This list is the canonical set; keep it in sync with
 /// mdtty's copy.
-bool is_text_presentation_wide_emoji(uint32_t cp) {
+static bool is_text_presentation_wide_emoji(uint32_t cp) {
   // Sorted by codepoint for readability.
   switch (cp) {
   case 0x203C: case 0x2049: case 0x2122: case 0x2139:
@@ -125,7 +125,7 @@ bool is_text_presentation_wide_emoji(uint32_t cp) {
 /// generated from the upstream Unicode data files (UnicodeData.txt,
 /// EastAsianWidth.txt, emoji-data.txt). This is the same source modern
 /// terminals (kitty, wezterm, ghostty, foot, GNOME Terminal, iTerm2) use.
-int terminal_charwidth(utf8proc_int32_t cp) {
+static int terminal_charwidth(utf8proc_int32_t cp) {
   if (cp < 0)
     return 1;
   // Default-text emoji that terminals render wide anyway. Checked first
@@ -1031,7 +1031,7 @@ std::optional<ChoiceResult> LineEditor::choose(std::span<const std::string> choi
         std::print("\x1b[{}A", menu_rows);
       }
       std::print("\r\x1b[J");
-      std::print("{}{}{}\r\n", prompt_.text, header, choices[selected]);
+      std::print("{} {}: {}\r\n", prompt_.text, header, choices[selected]);
       std::fflush(stdout);
       return ChoiceResult{.index = selected, .value = std::string(choices[selected])};
     }
