@@ -1,8 +1,12 @@
 #include "promptty/promptty.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <csignal>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
+#include <mutex>
 #include <poll.h>
 #include <print>
 #include <sys/ioctl.h>
@@ -20,6 +24,52 @@ volatile std::sig_atomic_t got_sigint = 0;
 
 void sigint_handler(int /*sig*/) {
   got_sigint = 1;
+}
+
+// --- Terminal rescue on abnormal exit ---
+//
+// LineEditor's destructor restores the termios, but that only runs on clean
+// stack unwind. Uncaught exceptions (std::terminate), abort() (ASan), and
+// fatal signals skip destructors and leave the tty in raw / no-echo mode,
+// which makes the shell unusable after a crash. Register process-scope
+// hooks that restore the captured termios on those paths too.
+
+namespace {
+std::atomic<bool> rescue_armed{false};
+struct termios rescue_termios{};
+std::terminate_handler prev_terminate = nullptr;
+} // namespace
+
+extern "C" void restore_tty_rescue() noexcept {
+  if (rescue_armed.load(std::memory_order_acquire))
+    ::tcsetattr(STDIN_FILENO, TCSANOW, &rescue_termios);
+}
+
+// Async-signal-safe: tcsetattr is AS-safe on Linux. Restore, reinstall the
+// default disposition, and re-raise so core dumps / ASan reports still fire.
+extern "C" void fatal_signal_rescue(int sig) {
+  restore_tty_rescue();
+  std::signal(sig, SIG_DFL);
+  std::raise(sig);
+}
+
+namespace {
+[[noreturn]] void terminate_rescue() noexcept {
+  restore_tty_rescue();
+  if (prev_terminate)
+    prev_terminate();
+  std::abort();
+}
+} // namespace
+
+static void install_rescue_hooks_once() {
+  static std::once_flag flag;
+  std::call_once(flag, [] {
+    std::atexit(restore_tty_rescue);
+    prev_terminate = std::set_terminate(terminate_rescue);
+    for (int sig : {SIGSEGV, SIGABRT, SIGTERM, SIGBUS, SIGFPE, SIGILL})
+      std::signal(sig, fatal_signal_rescue);
+  });
 }
 
 // --- UTF-8 utilities ---
@@ -421,6 +471,23 @@ KeyEvent read_key() {
         if (num == "21") return make_key(key::f10);
         if (num == "23") return make_key(key::f11);
         if (num == "24") return make_key(key::f12);
+        if (num == "200") {
+          // Bracketed paste: accumulate bytes up to the ESC [201~ terminator.
+          std::string body;
+          static constexpr std::string_view end_marker = "\x1b[201~";
+          for (;;) {
+            char c{};
+            if (::read(STDIN_FILENO, &c, 1) <= 0)
+              break;
+            body += c;
+            if (body.size() >= end_marker.size() &&
+                std::string_view(body).ends_with(end_marker)) {
+              body.resize(body.size() - end_marker.size());
+              break;
+            }
+          }
+          return {.k = key::paste, .ch = std::move(body)};
+        }
       }
       return make_key(key::unknown);
     }
@@ -457,18 +524,29 @@ LineEditor::LineEditor(Prompt prompt, std::optional<std::filesystem::path> histo
       owns_terminal_(true), prev_sigint_(std::signal(SIGINT, detail::sigint_handler)),
       history_file_(std::move(history_file)) {
   ::tcgetattr(STDIN_FILENO, &original_);
+  detail::rescue_termios = original_;
+  detail::rescue_armed.store(true, std::memory_order_release);
+  detail::install_rescue_hooks_once();
   struct termios raw = original_;
   raw.c_lflag &= static_cast<tcflag_t>(~(ICANON | ECHO));
   raw.c_cc[VMIN] = 1;
   raw.c_cc[VTIME] = 0;
   ::tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+  // Enable bracketed paste so pasted text (including newlines) is delivered
+  // as a single ESC [200~ … ESC [201~ payload instead of typed input.
+  std::print("\x1b[?2004h");
+  std::fflush(stdout);
   load_history();
 }
 
 LineEditor::~LineEditor() {
   save_history();
-  if (owns_terminal_)
+  if (owns_terminal_) {
+    std::print("\x1b[?2004l");
+    std::fflush(stdout);
     ::tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_);
+    detail::rescue_armed.store(false, std::memory_order_release);
+  }
   if (detail::got_sigint != 0) {
     std::signal(SIGINT, SIG_DFL);
     std::raise(SIGINT);
@@ -792,6 +870,26 @@ void LineEditor::handle(KeyEvent evt) {
     buffer_.insert(cursor_, evt.ch);
     cursor_ += evt.ch.size();
     break;
+  case key::paste: {
+    // Bracketed-paste payload: insert verbatim at the cursor. Normalize bare
+    // \r (some terminals send CR for newlines inside pastes) to \n so the
+    // result matches Alt+Enter-authored multiline input.
+    std::string text = evt.ch;
+    std::string norm;
+    norm.reserve(text.size());
+    for (std::size_t i = 0; i < text.size(); ++i) {
+      if (text[i] == '\r') {
+        norm += '\n';
+        if (i + 1 < text.size() && text[i + 1] == '\n')
+          ++i; // swallow \n of \r\n
+      } else {
+        norm += text[i];
+      }
+    }
+    buffer_.insert(cursor_, norm);
+    cursor_ += norm.size();
+    break;
+  }
   case key::alt_enter:
     buffer_.insert(cursor_, 1, '\n');
     ++cursor_;
