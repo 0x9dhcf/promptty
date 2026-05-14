@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-14
+
+### Fixed
+- `LineEditor::choose()` no longer leaves stale rows on screen when the
+  terminal is narrow enough to wrap menu lines. `refresh_menu` was
+  incrementing `menu_rows` once per logical line (`std::print("\r\n")`)
+  while `\x1b[{menu_rows}A` needs to cursor up by *visual* rows. When
+  the prompt header or a choice wrapped, each navigation keystroke
+  ate fewer rows than it had drawn, leaving an accumulating trail of
+  prior menu copies above the active one. Now each line's contribution
+  is computed via `ansi_visible_width / terminal_width` (ceiling), with
+  empty lines still counting as one row for the trailing newline.
+
 ## [0.2.1] - 2026-04-13
 
 ### Added
@@ -46,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `libpromptty.so` -> `libpromptty.so.0` -> `libpromptty.so.0.2.0` symlink
   chain.
 
-[Unreleased]: https://github.com/0x9dhcf/promptty/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/0x9dhcf/promptty/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/0x9dhcf/promptty/releases/tag/v0.2.2
 [0.2.1]: https://github.com/0x9dhcf/promptty/releases/tag/v0.2.1
 [0.2.0]: https://github.com/0x9dhcf/promptty/releases/tag/v0.2.0

@@ -1046,31 +1046,39 @@ void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t 
   }
   std::print("\r\x1b[J");
 
+  std::size_t term_width = detail::get_terminal_width();
   std::size_t term_height = detail::get_terminal_height();
   std::size_t max_visible = std::min(choices.size(), term_height - 2);
   std::size_t end = std::min(scroll_offset + max_visible, choices.size());
 
-  std::print("{}{}\r\n", prompt_.text, header);
-  std::size_t rows = 1;
+  // Count terminal rows occupied by a logical line, accounting for autowrap.
+  // An empty line still consumes one row (the trailing \r\n moves to the next).
+  auto visual_rows = [term_width](std::string_view s) -> std::size_t {
+    auto w = detail::ansi_visible_width(s);
+    if (w == 0) return 1;
+    return (w - 1) / term_width + 1;
+  };
 
-  if (scroll_offset > 0) {
-    std::print("  \xe2\x86\x91 {} more\r\n", scroll_offset);
-    ++rows;
-  }
+  auto emit = [&](std::string_view line, std::size_t& rows) {
+    std::print("{}\r\n", line);
+    rows += visual_rows(line);
+  };
+
+  std::size_t rows = 0;
+  emit(std::format("{}{}", prompt_.text, header), rows);
+
+  if (scroll_offset > 0)
+    emit(std::format("  \xe2\x86\x91 {} more", scroll_offset), rows);
 
   for (std::size_t i = scroll_offset; i < end; ++i) {
-    if (i == selected) {
-      std::print("  \xe2\x96\xb8 \x1b[7m{}\x1b[0m\r\n", choices[i]);
-    } else {
-      std::print("    {}\r\n", choices[i]);
-    }
-    ++rows;
+    if (i == selected)
+      emit(std::format("  \xe2\x96\xb8 \x1b[7m{}\x1b[0m", choices[i]), rows);
+    else
+      emit(std::format("    {}", choices[i]), rows);
   }
 
-  if (end < choices.size()) {
-    std::print("  \xe2\x86\x93 {} more\r\n", choices.size() - end);
-    ++rows;
-  }
+  if (end < choices.size())
+    emit(std::format("  \xe2\x86\x93 {} more", choices.size() - end), rows);
 
   menu_rows = rows;
   std::fflush(stdout);
