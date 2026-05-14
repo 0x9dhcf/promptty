@@ -1064,6 +1064,17 @@ void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t 
     rows += visual_rows(line);
   };
 
+  // Choice strings are rendered on a single visual line per entry. Replace
+  // any embedded \n / \r with a space so they don't break the menu layout
+  // (chatty's session names, for example, are derived from first-message
+  // text and can contain newlines from multi-line user input).
+  auto sanitize = [](std::string_view s) {
+    std::string out(s);
+    for (auto& c : out)
+      if (c == '\n' || c == '\r') c = ' ';
+    return out;
+  };
+
   std::size_t rows = 0;
   emit(std::format("{}{}", prompt_.text, header), rows);
 
@@ -1071,10 +1082,11 @@ void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t 
     emit(std::format("  \xe2\x86\x91 {} more", scroll_offset), rows);
 
   for (std::size_t i = scroll_offset; i < end; ++i) {
+    auto display = sanitize(choices[i]);
     if (i == selected)
-      emit(std::format("  \xe2\x96\xb8 \x1b[7m{}\x1b[0m", choices[i]), rows);
+      emit(std::format("  \xe2\x96\xb8 \x1b[7m{}\x1b[0m", display), rows);
     else
-      emit(std::format("    {}", choices[i]), rows);
+      emit(std::format("    {}", display), rows);
   }
 
   if (end < choices.size())
