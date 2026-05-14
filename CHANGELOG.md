@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-05-14
+
+### Fixed
+- `LineEditor::choose()` no longer breaks the menu layout when a choice
+  string contains embedded `\n` or `\r`. Such characters used to advance
+  the cursor an unaccounted-for row per occurrence, so each navigation
+  keystroke left a stale partial render above the active menu — the same
+  symptom that 0.2.2 fixed for terminal-width wrapping, but driven by
+  the choice content rather than the terminal column count. Embedded
+  `\n`/`\r` in displayed choices are now replaced with a space at render
+  time. The selection result returned to the caller is unchanged
+  (sanitization is display-only).
+
 ## [0.2.2] - 2026-05-14
 
 ### Fixed
@@ -59,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `libpromptty.so` -> `libpromptty.so.0` -> `libpromptty.so.0.2.0` symlink
   chain.
 
-[Unreleased]: https://github.com/0x9dhcf/promptty/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/0x9dhcf/promptty/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/0x9dhcf/promptty/releases/tag/v0.2.3
 [0.2.2]: https://github.com/0x9dhcf/promptty/releases/tag/v0.2.2
 [0.2.1]: https://github.com/0x9dhcf/promptty/releases/tag/v0.2.1
 [0.2.0]: https://github.com/0x9dhcf/promptty/releases/tag/v0.2.0
