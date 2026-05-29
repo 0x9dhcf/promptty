@@ -134,37 +134,106 @@ std::pair<char32_t, std::size_t> utf8_decode(std::string_view s, std::size_t pos
 static bool is_text_presentation_wide_emoji(uint32_t cp) {
   // Sorted by codepoint for readability.
   switch (cp) {
-  case 0x203C: case 0x2049: case 0x2122: case 0x2139:
-  case 0x2194: case 0x2195: case 0x2196: case 0x2197: case 0x2198: case 0x2199:
-  case 0x21A9: case 0x21AA:
-  case 0x2328: case 0x23CF:
+  case 0x203C:
+  case 0x2049:
+  case 0x2122:
+  case 0x2139:
+  case 0x2194:
+  case 0x2195:
+  case 0x2196:
+  case 0x2197:
+  case 0x2198:
+  case 0x2199:
+  case 0x21A9:
+  case 0x21AA:
+  case 0x2328:
+  case 0x23CF:
   case 0x24C2:
-  case 0x25AA: case 0x25AB: case 0x25B6: case 0x25C0:
-  case 0x25FB: case 0x25FC:
-  case 0x2600: case 0x2601: case 0x2602: case 0x2603: case 0x2604:
-  case 0x260E: case 0x2611:
-  case 0x2618: case 0x261D: case 0x2620:
-  case 0x2622: case 0x2623: case 0x2626: case 0x262A:
-  case 0x262E: case 0x262F:
-  case 0x2638: case 0x2639: case 0x263A:
-  case 0x2640: case 0x2642:
-  case 0x265F: case 0x2660: case 0x2663: case 0x2665: case 0x2666: case 0x2668:
-  case 0x267B: case 0x267E:
-  case 0x2692: case 0x2694: case 0x2695: case 0x2696: case 0x2697:
-  case 0x2699: case 0x269B: case 0x269C:
-  case 0x26A0: case 0x26A7:
-  case 0x26B0: case 0x26B1:
-  case 0x26C8: case 0x26CF: case 0x26D1:
-  case 0x26D3: case 0x26E9:
-  case 0x26F0: case 0x26F1: case 0x26F4: case 0x26F7: case 0x26F8: case 0x26F9:
-  case 0x2702: case 0x2708: case 0x2709:
-  case 0x270C: case 0x270D: case 0x270F: case 0x2712:
-  case 0x2714: case 0x2716: case 0x271D: case 0x2721:
-  case 0x2733: case 0x2734: case 0x2744: case 0x2747:
-  case 0x2763: case 0x2764: case 0x27A1:
-  case 0x2934: case 0x2935:
-  case 0x2B05: case 0x2B06: case 0x2B07:
-  case 0x3030: case 0x303D: case 0x3297: case 0x3299:
+  case 0x25AA:
+  case 0x25AB:
+  case 0x25B6:
+  case 0x25C0:
+  case 0x25FB:
+  case 0x25FC:
+  case 0x2600:
+  case 0x2601:
+  case 0x2602:
+  case 0x2603:
+  case 0x2604:
+  case 0x260E:
+  case 0x2611:
+  case 0x2618:
+  case 0x261D:
+  case 0x2620:
+  case 0x2622:
+  case 0x2623:
+  case 0x2626:
+  case 0x262A:
+  case 0x262E:
+  case 0x262F:
+  case 0x2638:
+  case 0x2639:
+  case 0x263A:
+  case 0x2640:
+  case 0x2642:
+  case 0x265F:
+  case 0x2660:
+  case 0x2663:
+  case 0x2665:
+  case 0x2666:
+  case 0x2668:
+  case 0x267B:
+  case 0x267E:
+  case 0x2692:
+  case 0x2694:
+  case 0x2695:
+  case 0x2696:
+  case 0x2697:
+  case 0x2699:
+  case 0x269B:
+  case 0x269C:
+  case 0x26A0:
+  case 0x26A7:
+  case 0x26B0:
+  case 0x26B1:
+  case 0x26C8:
+  case 0x26CF:
+  case 0x26D1:
+  case 0x26D3:
+  case 0x26E9:
+  case 0x26F0:
+  case 0x26F1:
+  case 0x26F4:
+  case 0x26F7:
+  case 0x26F8:
+  case 0x26F9:
+  case 0x2702:
+  case 0x2708:
+  case 0x2709:
+  case 0x270C:
+  case 0x270D:
+  case 0x270F:
+  case 0x2712:
+  case 0x2714:
+  case 0x2716:
+  case 0x271D:
+  case 0x2721:
+  case 0x2733:
+  case 0x2734:
+  case 0x2744:
+  case 0x2747:
+  case 0x2763:
+  case 0x2764:
+  case 0x27A1:
+  case 0x2934:
+  case 0x2935:
+  case 0x2B05:
+  case 0x2B06:
+  case 0x2B07:
+  case 0x3030:
+  case 0x303D:
+  case 0x3297:
+  case 0x3299:
     return true;
   default:
     return false;
@@ -227,8 +296,7 @@ std::size_t utf8_next_grapheme(std::string_view s, std::size_t pos) {
 std::size_t utf8_prev_grapheme(std::string_view s, std::size_t pos) {
   if (pos == 0)
     return 0;
-  if (pos > s.size())
-    pos = s.size();
+  pos = std::min(pos, s.size());
 
   // Walk back at least one codepoint, then keep walking back while we're
   // crossing combining marks / extending characters. A safe-enough heuristic:
@@ -271,9 +339,8 @@ std::size_t display_width(std::string_view s) {
     auto [cp, len] = utf8_decode(s, pos);
     if (len == 0)
       break;
-    bool boundary =
-        (prev_cp == 0) ||
-        utf8proc_grapheme_break_stateful(prev_cp, static_cast<utf8proc_int32_t>(cp), &state);
+    bool boundary = (prev_cp == 0) || utf8proc_grapheme_break_stateful(
+                                          prev_cp, static_cast<utf8proc_int32_t>(cp), &state);
     if (boundary) {
       int w = codepoint_display_width(cp);
       if (w > 0)
@@ -418,11 +485,16 @@ KeyEvent read_key() {
       if (::read(STDIN_FILENO, &seq1, 1) <= 0)
         return make_key(key::unknown);
       switch (seq1) {
-      case 'P': return make_key(key::f1);
-      case 'Q': return make_key(key::f2);
-      case 'R': return make_key(key::f3);
-      case 'S': return make_key(key::f4);
-      default:  return make_key(key::unknown);
+      case 'P':
+        return make_key(key::f1);
+      case 'Q':
+        return make_key(key::f2);
+      case 'R':
+        return make_key(key::f3);
+      case 'S':
+        return make_key(key::f4);
+      default:
+        return make_key(key::unknown);
       }
     }
 
@@ -460,17 +532,28 @@ KeyEvent read_key() {
             return make_key(key::unknown);
           num += c;
         }
-        if (num == "3")  return make_key(key::del);
-        if (num == "5")  return make_key(key::page_up);
-        if (num == "6")  return make_key(key::page_down);
-        if (num == "15") return make_key(key::f5);
-        if (num == "17") return make_key(key::f6);
-        if (num == "18") return make_key(key::f7);
-        if (num == "19") return make_key(key::f8);
-        if (num == "20") return make_key(key::f9);
-        if (num == "21") return make_key(key::f10);
-        if (num == "23") return make_key(key::f11);
-        if (num == "24") return make_key(key::f12);
+        if (num == "3")
+          return make_key(key::del);
+        if (num == "5")
+          return make_key(key::page_up);
+        if (num == "6")
+          return make_key(key::page_down);
+        if (num == "15")
+          return make_key(key::f5);
+        if (num == "17")
+          return make_key(key::f6);
+        if (num == "18")
+          return make_key(key::f7);
+        if (num == "19")
+          return make_key(key::f8);
+        if (num == "20")
+          return make_key(key::f9);
+        if (num == "21")
+          return make_key(key::f10);
+        if (num == "23")
+          return make_key(key::f11);
+        if (num == "24")
+          return make_key(key::f12);
         if (num == "200") {
           // Bracketed paste: accumulate bytes up to the ESC [201~ terminator.
           std::string body;
@@ -480,8 +563,7 @@ KeyEvent read_key() {
             if (::read(STDIN_FILENO, &c, 1) <= 0)
               break;
             body += c;
-            if (body.size() >= end_marker.size() &&
-                std::string_view(body).ends_with(end_marker)) {
+            if (body.size() >= end_marker.size() && std::string_view(body).ends_with(end_marker)) {
               body.resize(body.size() - end_marker.size());
               break;
             }
@@ -795,27 +877,48 @@ void LineEditor::set_prompt(Prompt prompt) {
 /// is reserved by the editor for navigation/editing.
 static std::optional<bindable_key> to_bindable(key k) {
   switch (k) {
-  case key::ctrl_g: return bindable_key::ctrl_g;
-  case key::ctrl_o: return bindable_key::ctrl_o;
-  case key::ctrl_r: return bindable_key::ctrl_r;
-  case key::ctrl_t: return bindable_key::ctrl_t;
-  case key::ctrl_x: return bindable_key::ctrl_x;
-  case key::ctrl_y: return bindable_key::ctrl_y;
-  case key::page_up: return bindable_key::page_up;
-  case key::page_down: return bindable_key::page_down;
-  case key::f1: return bindable_key::f1;
-  case key::f2: return bindable_key::f2;
-  case key::f3: return bindable_key::f3;
-  case key::f4: return bindable_key::f4;
-  case key::f5: return bindable_key::f5;
-  case key::f6: return bindable_key::f6;
-  case key::f7: return bindable_key::f7;
-  case key::f8: return bindable_key::f8;
-  case key::f9: return bindable_key::f9;
-  case key::f10: return bindable_key::f10;
-  case key::f11: return bindable_key::f11;
-  case key::f12: return bindable_key::f12;
-  default: return std::nullopt;
+  case key::ctrl_g:
+    return bindable_key::ctrl_g;
+  case key::ctrl_o:
+    return bindable_key::ctrl_o;
+  case key::ctrl_r:
+    return bindable_key::ctrl_r;
+  case key::ctrl_t:
+    return bindable_key::ctrl_t;
+  case key::ctrl_x:
+    return bindable_key::ctrl_x;
+  case key::ctrl_y:
+    return bindable_key::ctrl_y;
+  case key::page_up:
+    return bindable_key::page_up;
+  case key::page_down:
+    return bindable_key::page_down;
+  case key::f1:
+    return bindable_key::f1;
+  case key::f2:
+    return bindable_key::f2;
+  case key::f3:
+    return bindable_key::f3;
+  case key::f4:
+    return bindable_key::f4;
+  case key::f5:
+    return bindable_key::f5;
+  case key::f6:
+    return bindable_key::f6;
+  case key::f7:
+    return bindable_key::f7;
+  case key::f8:
+    return bindable_key::f8;
+  case key::f9:
+    return bindable_key::f9;
+  case key::f10:
+    return bindable_key::f10;
+  case key::f11:
+    return bindable_key::f11;
+  case key::f12:
+    return bindable_key::f12;
+  default:
+    return std::nullopt;
   }
 }
 
@@ -1055,7 +1158,8 @@ void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t 
   // An empty line still consumes one row (the trailing \r\n moves to the next).
   auto visual_rows = [term_width](std::string_view s) -> std::size_t {
     auto w = detail::ansi_visible_width(s);
-    if (w == 0) return 1;
+    if (w == 0)
+      return 1;
     return (w - 1) / term_width + 1;
   };
 
@@ -1071,7 +1175,8 @@ void LineEditor::refresh_menu(std::span<const std::string> choices, std::size_t 
   auto sanitize = [](std::string_view s) {
     std::string out(s);
     for (auto& c : out)
-      if (c == '\n' || c == '\r') c = ' ';
+      if (c == '\n' || c == '\r')
+        c = ' ';
     return out;
   };
 
